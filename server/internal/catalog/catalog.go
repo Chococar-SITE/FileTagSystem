@@ -84,6 +84,19 @@ func (s *Store) UpdateStorageRoot(ctx context.Context, id int64, root string) er
 	return nil
 }
 
+// UpdateStorage updates the name and root path of a storage source.
+func (s *Store) UpdateStorage(ctx context.Context, id int64, name, root string) error {
+	res, err := s.db.Write.ExecContext(ctx,
+		`UPDATE storage_providers SET name=?, root_path=? WHERE id=?`, name, root, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // DeleteStorage removes a storage source. The files cascade via FK, but
 // multi-type permission rows (resource_type in 'storage'/'file') have no FK and
 // must be cleaned in the same transaction (§4.3).
@@ -185,6 +198,18 @@ func (s *Store) SetThumbnail(ctx context.Context, storageID int64, fi storage.Fi
 	}
 	_, err = s.db.Write.ExecContext(ctx, `UPDATE files SET thumbnail_path=? WHERE id=?`, thumbPath, id)
 	return id, err
+}
+
+// SetThumbnailByID records a thumbnail path for an existing files row.
+func (s *Store) SetThumbnailByID(ctx context.Context, fileID int64, thumbPath string) error {
+	res, err := s.db.Write.ExecContext(ctx, `UPDATE files SET thumbnail_path=? WHERE id=?`, thumbPath, fileID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // Child is a live directory entry augmented with its files row, if any.
