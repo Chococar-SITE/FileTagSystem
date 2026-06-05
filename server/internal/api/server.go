@@ -101,6 +101,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/auth/2fa/setup", s.authed(s.handle2FASetup))
 	m.HandleFunc("POST /api/auth/2fa/enable", s.authed(s.handle2FAEnable))
 	m.HandleFunc("POST /api/auth/2fa/disable", s.authed(s.handle2FADisable))
+	m.HandleFunc("GET /api/auth/providers", s.handleOAuthProviders)
 	m.HandleFunc("GET /api/auth/oauth/{provider}", s.handleOAuthStart)
 	m.HandleFunc("GET /api/auth/oauth/{provider}/callback", s.handleOAuthCallback)
 
@@ -123,9 +124,11 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/files/{id}/fields", s.authed(s.handleGetFields))
 	m.HandleFunc("POST /api/files/{id}/fields", s.authed(s.handleApplyField))
 	m.HandleFunc("DELETE /api/files/{id}/fields/{ftid}", s.authed(s.handleRemoveField))
+	m.HandleFunc("GET /api/files/{id}/thumbnail", s.authed(s.handleThumbnail))
 	m.HandleFunc("PUT /api/files/{id}/thumbnail", s.authed(s.handleSetThumbnail))
 	m.HandleFunc("GET /api/files/{id}/preview", s.authed(s.handlePreview))
 	m.HandleFunc("GET /api/files/{id}/raw", s.authed(s.handleRaw))
+	m.HandleFunc("GET /api/files/{id}/archive", s.authed(s.handleArchive))
 
 	// Field types / values / aliases
 	m.HandleFunc("GET /api/field-types", s.authed(s.handleListFieldTypes))

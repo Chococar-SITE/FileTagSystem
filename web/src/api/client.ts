@@ -82,6 +82,14 @@ export const authApi = {
   me() {
     return request<{ user: User }>('/auth/me')
   },
+
+  providers() {
+    return request<{ providers: string[] }>('/auth/providers')
+  },
+
+  oauthUrl(provider: string) {
+    return `${BASE}/auth/oauth/${provider}`
+  },
 }
 
 // ── Storages ──────────────────────────────────────────────────────────────────

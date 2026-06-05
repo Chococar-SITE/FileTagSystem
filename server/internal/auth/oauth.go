@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -60,6 +61,16 @@ func (s *Service) RegisterOAuthProvider(name string, cfg OAuthProviderConfig) {
 func (s *Service) OAuthConfigured(name string) bool {
 	_, ok := s.oauth[name]
 	return ok
+}
+
+// OAuthProviderNames lists configured providers, sorted.
+func (s *Service) OAuthProviderNames() []string {
+	names := make([]string, 0, len(s.oauth))
+	for n := range s.oauth {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // NewState returns a random anti-CSRF state value (§6.4).

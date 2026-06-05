@@ -13,6 +13,12 @@ const (
 	cookieOAuthVerifier = "ft_oauth_verifier"
 )
 
+// handleOAuthProviders lists configured OAuth providers (public) so the login
+// page can render the right buttons.
+func (s *Server) handleOAuthProviders(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"providers": s.auth.OAuthProviderNames()})
+}
+
 // handleOAuthStart begins an OAuth login: it sets a state + PKCE verifier cookie
 // and redirects to the provider (§6.4).
 func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {

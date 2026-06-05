@@ -1,9 +1,13 @@
 package api_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -33,10 +37,13 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	root := t.TempDir()
 	mustMk(t, filepath.Join(root, "GameA"))
 	mustWrite(t, filepath.Join(root, "GameA", "readme.txt"), "hello world")
+	writePNG(t, filepath.Join(root, "GameA", "pic.png"), 400, 200)
+	writeZip(t, filepath.Join(root, "GameA", "bundle.zip"))
 
 	key, _ := crypto.GenerateKey()
 	kr, _ := crypto.NewKeyRing(key)
 	cfg := &config.Config{
+		DataDir:   t.TempDir(),
 		AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
 		LoginMaxFails: 5, LoginLockout: time.Minute,
 		ScannerBin: "filetag-scanner", TextPreviewCap: 256 * 1024,
@@ -234,6 +241,93 @@ func mustWrite(t *testing.T, p, content string) {
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writePNG(t *testing.T, p string, w, h int) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{uint8(x), uint8(y), 120, 255})
+		}
+	}
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeZip(t *testing.T, p string) {
+	t.Helper()
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	zw := zip.NewWriter(f)
+	e, _ := zw.Create("inside/hello.txt")
+	_, _ = e.Write([]byte("hi from zip"))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestThumbnailAndArchive(t *testing.T) {
+	ts, root := newTestServer(t)
+	c := newClient(t)
+	base := ts.URL
+	do(t, c, "POST", base+"/api/auth/login", map[string]string{"username": "admin", "password": adminPass})
+
+	code, body := do(t, c, "POST", base+"/api/storages", map[string]string{"name": "m", "type": "local", "root_path": root})
+	if code != http.StatusCreated {
+		t.Fatalf("storage = %d (%s)", code, body)
+	}
+	sid := int64(jsonNum(t, body, "id"))
+
+	// Materialize the image + zip by tagging them.
+	ftBody := mustPost(t, c, base+"/api/field-types", map[string]any{"name": "k", "allow_multi": true})
+	ft := int64(jsonNum(t, ftBody, "id"))
+	fvBody := mustPost(t, c, base+"/api/field-values", map[string]any{"field_type_id": ft, "value": "v"})
+	fv := int64(jsonNum(t, fvBody, "id"))
+
+	picBody := mustPost(t, c, base+"/api/storages/"+itoa(sid)+"/tags", map[string]any{"path": "GameA/pic.png", "field_type_id": ft, "field_value_id": fv})
+	picID := int64(jsonNum(t, picBody, "file_id"))
+	zipBody := mustPost(t, c, base+"/api/storages/"+itoa(sid)+"/tags", map[string]any{"path": "GameA/bundle.zip", "field_type_id": ft, "field_value_id": fv})
+	zipID := int64(jsonNum(t, zipBody, "file_id"))
+
+	// Thumbnail is generated on demand for the image.
+	resp, err := c.Get(base + "/api/files/" + itoa(picID) + "/thumbnail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct := resp.Header.Get("Content-Type")
+	tb, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || ct != "image/png" {
+		t.Fatalf("thumbnail = %d ct=%q", resp.StatusCode, ct)
+	}
+	if cfg, err := png.DecodeConfig(bytes.NewReader(tb)); err != nil || cfg.Width != 256 {
+		t.Fatalf("thumbnail decode w=%d err=%v", cfg.Width, err)
+	}
+
+	// Archive listing returns the zip entry.
+	code, body = do(t, c, "GET", base+"/api/files/"+itoa(zipID)+"/archive", nil)
+	if code != http.StatusOK || !bytes.Contains(body, []byte("inside/hello.txt")) {
+		t.Fatalf("archive = %d (%s)", code, body)
+	}
+}
+
+func mustPost(t *testing.T, c *http.Client, url string, body any) []byte {
+	t.Helper()
+	code, b := do(t, c, "POST", url, body)
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("POST %s = %d (%s)", url, code, b)
+	}
+	return b
 }
 
 func jsonNum(t *testing.T, body []byte, key string) float64 {

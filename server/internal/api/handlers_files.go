@@ -125,8 +125,10 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request, p princip
 	if f.SizeBytes != nil {
 		size = *f.SizeBytes
 	}
+	archiveSupported := k.Kind == "archive" && strings.EqualFold(path.Ext(f.Path), ".zip")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"kind": k.Kind, "mime": k.MIME, "size": size, "streamable": k.Streamable, "truncated": false,
+		"kind": k.Kind, "mime": k.MIME, "size": size, "streamable": k.Streamable,
+		"truncated": false, "archive_supported": archiveSupported,
 	})
 }
 

@@ -107,3 +107,33 @@
   text-align: center;
   text-decoration: underline;
 }
+
+.oauth {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.divider {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.oauthButton {
+  display: block;
+  padding: 10px;
+  text-align: center;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.95rem;
+  transition: border-color 0.15s;
+}
+
+.oauthButton:hover {
+  border-color: var(--color-accent);
+}

@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/authContext.ts'
+import { authApi } from '../api/client.ts'
 import styles from './LoginPage.module.css'
+
+const PROVIDER_LABELS: Record<string, string> = { github: 'GitHub', google: 'Google' }
 
 export function LoginPage() {
   const { login, verify2fa } = useAuth()
@@ -13,6 +16,22 @@ export function LoginPage() {
   const [step, setStep] = useState<'login' | '2fa'>('login')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [providers, setProviders] = useState<string[]>([])
+
+  useEffect(() => {
+    let active = true
+    authApi
+      .providers()
+      .then((r) => {
+        if (active) setProviders(r.providers ?? [])
+      })
+      .catch(() => {
+        /* OAuth optional; ignore when unavailable */
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -126,6 +145,17 @@ export function LoginPage() {
               ← 返回登入
             </button>
           </form>
+        )}
+
+        {step === 'login' && providers.length > 0 && (
+          <div className={styles.oauth}>
+            <div className={styles.divider}>或</div>
+            {providers.map((p) => (
+              <a key={p} className={styles.oauthButton} href={authApi.oauthUrl(p)}>
+                使用 {PROVIDER_LABELS[p] ?? p} 登入
+              </a>
+            ))}
+          </div>
         )}
       </div>
     </div>
