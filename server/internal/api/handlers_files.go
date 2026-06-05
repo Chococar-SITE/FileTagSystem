@@ -5,6 +5,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/chococar-site/filetagsystem/server/internal/audit"
 	"github.com/chococar-site/filetagsystem/server/internal/models"
 	"github.com/chococar-site/filetagsystem/server/internal/storage"
 )
@@ -73,6 +74,8 @@ func (s *Server) handleApplyField(w http.ResponseWriter, r *http.Request, p prin
 		serverError(w, err)
 		return
 	}
+	s.audit.Log(r.Context(), ref(p.UserID), audit.ActionTagApply, "file", ref(f.ID),
+		map[string]any{"field_type_id": req.FieldTypeID, "field_value_id": req.FieldValueID})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -90,6 +93,7 @@ func (s *Server) handleRemoveField(w http.ResponseWriter, r *http.Request, p pri
 		serverError(w, err)
 		return
 	}
+	s.audit.Log(r.Context(), ref(p.UserID), audit.ActionTagRemove, "file", ref(f.ID), map[string]any{"field_type_id": ftid})
 	w.WriteHeader(http.StatusNoContent)
 }
 

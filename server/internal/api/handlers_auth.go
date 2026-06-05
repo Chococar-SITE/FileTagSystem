@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chococar-site/filetagsystem/server/internal/audit"
 	"github.com/chococar-site/filetagsystem/server/internal/auth"
 )
 
@@ -34,6 +35,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch err {
 		case auth.ErrInvalidCredentials:
+			s.audit.Log(r.Context(), nil, audit.ActionLoginFail, "", nil, map[string]any{"username": req.Username, "ip": clientIP(r)})
 			writeError(w, http.StatusUnauthorized, "invalid credentials")
 		case auth.ErrLocked:
 			writeError(w, http.StatusTooManyRequests, "too many attempts, try again later")
@@ -42,6 +44,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	s.audit.Log(r.Context(), ref(res.User.ID), audit.ActionLogin, "", nil, map[string]any{"ip": clientIP(r), "twofa": res.TwoFARequired})
 	if res.TwoFARequired {
 		setCookie(w, r, cookiePending, res.PendingToken, "/api/auth", 5*time.Minute)
 		writeJSON(w, http.StatusOK, map[string]any{"twofa_required": true})

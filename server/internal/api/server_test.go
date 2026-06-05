@@ -185,6 +185,15 @@ func TestEndToEndFlow(t *testing.T) {
 	if code != http.StatusOK || string(raw) != "hello world" {
 		t.Fatalf("raw = %d (%q)", code, raw)
 	}
+
+	// Audit log captured the login and the tag operations (§7.5).
+	code, body = do(t, c, "GET", base+"/api/audit", nil)
+	if code != http.StatusOK {
+		t.Fatalf("audit = %d (%s)", code, body)
+	}
+	if !bytes.Contains(body, []byte(`"login"`)) || !bytes.Contains(body, []byte(`"tag.apply"`)) {
+		t.Fatalf("audit log missing expected actions: %s", body)
+	}
 }
 
 func TestNonAdminForbidden(t *testing.T) {

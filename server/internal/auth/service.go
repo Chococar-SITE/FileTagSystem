@@ -28,6 +28,7 @@ type Service struct {
 	refreshTTL time.Duration
 	limiter    *Limiter
 	issuerName string
+	oauth      map[string]OAuthProviderConfig
 }
 
 // NewService builds the auth service. jwtKey comes from secret management (§7.2).

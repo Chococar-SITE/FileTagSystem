@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/chococar-site/filetagsystem/server/internal/audit"
 	"github.com/chococar-site/filetagsystem/server/internal/db"
 	"github.com/chococar-site/filetagsystem/server/internal/models"
 	"github.com/chococar-site/filetagsystem/server/internal/perm"
@@ -83,6 +84,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request, p prin
 		serverError(w, err)
 		return
 	}
+	s.audit.Log(r.Context(), ref(p.UserID), audit.ActionUserDelete, "user", ref(id), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -206,6 +208,8 @@ func (s *Server) handleGrantPermission(w http.ResponseWriter, r *http.Request, p
 	case err != nil:
 		serverError(w, err)
 	default:
+		s.audit.Log(r.Context(), ref(p.UserID), audit.ActionPermGrant, string(permission.ResourceType), permission.ResourceID,
+			map[string]any{"principal_type": req.PrincipalType, "principal_id": req.PrincipalID, "is_deny": req.IsDeny})
 		writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 	}
 }
@@ -223,6 +227,7 @@ func (s *Server) handleDeletePermission(w http.ResponseWriter, r *http.Request, 
 		serverError(w, err)
 		return
 	}
+	s.audit.Log(r.Context(), ref(p.UserID), audit.ActionPermRevoke, "permission", ref(id), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -242,6 +247,23 @@ func (s *Server) handleStoragePermissions(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, ensureSlice(rows))
+}
+
+// handleListAudit returns recent audit entries for admins (§7.5).
+func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request, p principal) {
+	if !s.requireSystemAdmin(w, r, p) {
+		return
+	}
+	limit := 100
+	if v, ok := parseID2(r.URL.Query().Get("limit")); ok {
+		limit = int(v)
+	}
+	entries, err := s.audit.List(r.Context(), limit)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ensureSlice(entries))
 }
 
 // handleEffective explains a user's effective permissions on a resource (§8.8).

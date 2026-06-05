@@ -30,23 +30,29 @@ func (s *Service) Login(ctx context.Context, username, password, ip string) (Log
 		return LoginResult{}, ErrInvalidCredentials
 	}
 	s.limiter.Reset(ukey)
+	return s.finishLogin(ctx, id)
+}
 
-	u, err := s.GetUser(ctx, id)
+// finishLogin completes authentication for a verified user: it returns a
+// pending result if 2FA is enabled, otherwise issues tokens. Shared by password
+// and OAuth login.
+func (s *Service) finishLogin(ctx context.Context, userID int64) (LoginResult, error) {
+	u, err := s.GetUser(ctx, userID)
 	if err != nil {
 		return LoginResult{}, err
 	}
-	enabled, err := s.TwoFAEnabled(ctx, id)
+	enabled, err := s.TwoFAEnabled(ctx, userID)
 	if err != nil {
 		return LoginResult{}, err
 	}
 	if enabled {
-		pending, err := s.jwt.IssuePending(id)
+		pending, err := s.jwt.IssuePending(userID)
 		if err != nil {
 			return LoginResult{}, err
 		}
 		return LoginResult{User: u, TwoFARequired: true, PendingToken: pending}, nil
 	}
-	access, refresh, err := s.IssueTokens(ctx, id)
+	access, refresh, err := s.IssueTokens(ctx, userID)
 	if err != nil {
 		return LoginResult{}, err
 	}

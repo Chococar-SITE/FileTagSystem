@@ -185,6 +185,24 @@ func (s *Store) GetFile(ctx context.Context, id int64) (models.File, error) {
 	return scanFile(s.db.Read.QueryRowContext(ctx, filesSelect+` WHERE id=?`, id))
 }
 
+// ListMissing returns files whose path_status is 'missing' for a storage (§5.8).
+func (s *Store) ListMissing(ctx context.Context, storageID int64) ([]models.File, error) {
+	rows, err := s.db.Read.QueryContext(ctx, filesSelect+` WHERE storage_id=? AND path_status='missing' ORDER BY path`, storageID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []models.File
+	for rows.Next() {
+		f, err := scanFile(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
 // GetFileByPath returns a files row by (storageID, path), or ErrNotFound.
 func (s *Store) GetFileByPath(ctx context.Context, storageID int64, path string) (models.File, error) {
 	return scanFile(s.db.Read.QueryRowContext(ctx, filesSelect+` WHERE storage_id=? AND path=?`, storageID, path))

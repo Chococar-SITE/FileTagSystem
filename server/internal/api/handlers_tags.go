@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/chococar-site/filetagsystem/server/internal/audit"
 	"github.com/chococar-site/filetagsystem/server/internal/models"
 	"github.com/chococar-site/filetagsystem/server/internal/tags"
 )
@@ -211,6 +212,7 @@ func (s *Server) handleDeleteFieldValue(w http.ResponseWriter, r *http.Request, 
 		notFoundOrTag(w, err)
 		return
 	}
+	s.audit.Log(r.Context(), ref(p.UserID), audit.ActionValueDelete, "field_value", ref(id), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 

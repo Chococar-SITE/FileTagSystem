@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/chococar-site/filetagsystem/server/internal/audit"
 	"github.com/chococar-site/filetagsystem/server/internal/catalog"
 	"github.com/chococar-site/filetagsystem/server/internal/models"
 )
@@ -108,6 +109,7 @@ func (s *Server) handleDeleteStorage(w http.ResponseWriter, r *http.Request, p p
 		notFoundOr(w, err)
 		return
 	}
+	s.audit.Log(r.Context(), ref(p.UserID), audit.ActionStorageDel, "storage", ref(id), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -121,20 +123,27 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request, p principal)
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	st, err := s.cat.GetStorage(r.Context(), id)
-	if err != nil {
-		notFoundOr(w, err)
-		return
-	}
-	bin, root := s.cfg.ScannerBin, st.RootPath
-	err = s.jobs.Start(id, func(ctx context.Context, progress func(int64)) (int64, error) {
-		return s.ingest.RunScanner(ctx, bin, root, id, "", progress)
-	})
-	if err != nil {
+	if err := s.triggerScan(r.Context(), id); err != nil {
+		if errors.Is(err, catalog.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
 		writeError(w, http.StatusConflict, "a scan is already running")
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"job_id": id})
+}
+
+// triggerScan starts a background scan of the storage root, ingesting NDJSON.
+func (s *Server) triggerScan(ctx context.Context, id int64) error {
+	st, err := s.cat.GetStorage(ctx, id)
+	if err != nil {
+		return err
+	}
+	bin, root := s.cfg.ScannerBin, st.RootPath
+	return s.jobs.Start(id, func(ctx context.Context, progress func(int64)) (int64, error) {
+		return s.ingest.RunScanner(ctx, bin, root, id, "", progress)
+	})
 }
 
 func (s *Server) handleScanStatus(w http.ResponseWriter, r *http.Request, p principal) {
@@ -206,6 +215,8 @@ func (s *Server) handleTagByPath(w http.ResponseWriter, r *http.Request, p princ
 		serverError(w, err)
 		return
 	}
+	s.audit.Log(r.Context(), ref(p.UserID), audit.ActionTagApply, "file", ref(fileID),
+		map[string]any{"path": req.Path, "field_type_id": req.FieldTypeID, "field_value_id": req.FieldValueID})
 	writeJSON(w, http.StatusOK, map[string]any{"file_id": fileID})
 }
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/chococar-site/filetagsystem/server/internal/audit"
 	"github.com/chococar-site/filetagsystem/server/internal/auth"
 	"github.com/chococar-site/filetagsystem/server/internal/catalog"
 	"github.com/chococar-site/filetagsystem/server/internal/config"
@@ -27,8 +28,12 @@ type Server struct {
 	auth   *auth.Service
 	ingest *ingest.Ingester
 	jobs   *ingest.JobManager
+	audit  *audit.Logger
 	mux    *http.ServeMux
 }
+
+// ref returns a pointer to v (handy for nullable audit ids).
+func ref[T any](v T) *T { return &v }
 
 // NewServer constructs the server and registers routes.
 func NewServer(cfg *config.Config, d *db.DB, keys *crypto.KeyRing, jwtKey []byte) *Server {
@@ -41,10 +46,41 @@ func NewServer(cfg *config.Config, d *db.DB, keys *crypto.KeyRing, jwtKey []byte
 		auth:   auth.NewService(d, keys, jwtKey, cfg.AccessTTL, cfg.RefreshTTL, cfg.LoginMaxFails, cfg.LoginLockout),
 		ingest: ingest.New(d),
 		jobs:   ingest.NewJobManager(),
+		audit:  audit.New(d),
 		mux:    http.NewServeMux(),
 	}
+	s.registerOAuth()
 	s.routes()
 	return s
+}
+
+// registerOAuth wires the GitHub/Google providers when configured (§6.1).
+func (s *Server) registerOAuth() {
+	if s.cfg.GitHub.Configured() {
+		s.auth.RegisterOAuthProvider("github", auth.OAuthProviderConfig{
+			Kind:         "github",
+			ClientID:     s.cfg.GitHub.ClientID,
+			ClientSecret: s.cfg.GitHub.ClientSecret,
+			AuthURL:      "https://github.com/login/oauth/authorize",
+			TokenURL:     "https://github.com/login/oauth/access_token",
+			UserURL:      "https://api.github.com/user",
+			EmailsURL:    "https://api.github.com/user/emails",
+			RedirectURL:  s.cfg.GitHub.RedirectURL,
+			Scopes:       []string{"read:user", "user:email"},
+		})
+	}
+	if s.cfg.Google.Configured() {
+		s.auth.RegisterOAuthProvider("google", auth.OAuthProviderConfig{
+			Kind:         "google",
+			ClientID:     s.cfg.Google.ClientID,
+			ClientSecret: s.cfg.Google.ClientSecret,
+			AuthURL:      "https://accounts.google.com/o/oauth2/v2/auth",
+			TokenURL:     "https://oauth2.googleapis.com/token",
+			UserURL:      "https://openidconnect.googleapis.com/v1/userinfo",
+			RedirectURL:  s.cfg.Google.RedirectURL,
+			Scopes:       []string{"openid", "email", "profile"},
+		})
+	}
 }
 
 // Handler returns the HTTP handler with global middleware applied.
@@ -65,6 +101,8 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/auth/2fa/setup", s.authed(s.handle2FASetup))
 	m.HandleFunc("POST /api/auth/2fa/enable", s.authed(s.handle2FAEnable))
 	m.HandleFunc("POST /api/auth/2fa/disable", s.authed(s.handle2FADisable))
+	m.HandleFunc("GET /api/auth/oauth/{provider}", s.handleOAuthStart)
+	m.HandleFunc("GET /api/auth/oauth/{provider}/callback", s.handleOAuthCallback)
 
 	// Storages
 	m.HandleFunc("GET /api/storages", s.authed(s.handleListStorages))
@@ -75,6 +113,9 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/storages/{id}/status", s.authed(s.handleScanStatus))
 	m.HandleFunc("POST /api/storages/{id}/scan/cancel", s.authed(s.handleScanCancel))
 	m.HandleFunc("POST /api/storages/{id}/tags", s.authed(s.handleTagByPath))
+	m.HandleFunc("PUT /api/storages/{id}/root", s.authed(s.handleStorageRoot))
+	m.HandleFunc("POST /api/storages/{id}/verify", s.authed(s.handleVerify))
+	m.HandleFunc("GET /api/storages/{id}/missing", s.authed(s.handleMissing))
 
 	// Files
 	m.HandleFunc("GET /api/files", s.authed(s.handleListFiles))
@@ -100,6 +141,12 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/field-values/{id}/aliases", s.authed(s.handleListAliases))
 	m.HandleFunc("POST /api/field-values/{id}/aliases", s.authed(s.handleAddAlias))
 	m.HandleFunc("DELETE /api/field-values/{id}/aliases/{aid}", s.authed(s.handleDeleteAlias))
+	m.HandleFunc("POST /api/field-values/{id}/merge", s.authed(s.handleMergeValue))
+	m.HandleFunc("GET /api/field-values/{id}/usage", s.authed(s.handleValueUsage))
+	m.HandleFunc("GET /api/field-types/{id}/unused", s.authed(s.handleUnusedValues))
+
+	// Tag application (batch)
+	m.HandleFunc("POST /api/tags/batch", s.authed(s.handleBatchTags))
 
 	// Search
 	m.HandleFunc("GET /api/search", s.authed(s.handleSearch))
@@ -117,6 +164,7 @@ func (s *Server) routes() {
 	m.HandleFunc("DELETE /api/permissions/{id}", s.authed(s.handleDeletePermission))
 	m.HandleFunc("GET /api/storages/{id}/permissions", s.authed(s.handleStoragePermissions))
 	m.HandleFunc("GET /api/permissions/effective", s.authed(s.handleEffective))
+	m.HandleFunc("GET /api/audit", s.authed(s.handleListAudit))
 
 	// Health
 	m.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
