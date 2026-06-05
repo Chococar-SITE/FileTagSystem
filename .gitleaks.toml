@@ -1,0 +1,20 @@
+# gitleaks configuration. Extends the default rules; only test fixtures and
+# example files are allowlisted (they contain dummy values, never real secrets).
+title = "FileTagSystem gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures, examples, and docs — no real secrets"
+paths = [
+  '''.*_test\.go$''',
+  '''.*\.test\.(ts|tsx)$''',
+  '''(^|/)\.env\.example$''',
+  '''(^|/)docs/.*''',
+]
+# Dummy values used only in tests (low-entropy, clearly not real credentials).
+regexes = [
+  '''0123456789abcdef0123456789abcdef''',
+  '''admin-pass-123''',
+]
