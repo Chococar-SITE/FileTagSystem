@@ -1,0 +1,88 @@
+name: Security
+
+on:
+  push:
+    branches: [main, master, "claude/**"]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Scan the full git history + working tree for committed secrets.
+  # Uses the gitleaks binary directly (no org license required).
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver=$(curl -sSfL -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+            | grep -oP '"tag_name":\s*"v\K[^"]+')
+          echo "Installing gitleaks v$ver"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${ver}/gitleaks_${ver}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+      - name: Scan
+        run: gitleaks detect --source . --redact --no-banner --verbose --exit-code 1
+
+  # Block PRs that introduce dependencies with known vulnerabilities.
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  # Static analysis. Runs per language only when that component exists.
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - id: guard
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.language }}" = "go" ] && [ -f server/go.mod ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ matrix.language }}" = "javascript-typescript" ] && [ -f web/package.json ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Component for '${{ matrix.language }}' not present yet — skipping."
+          fi
+      - if: steps.guard.outputs.run == 'true'
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+      - if: steps.guard.outputs.run == 'true'
+        uses: github/codeql-action/autobuild@v3
+      - if: steps.guard.outputs.run == 'true'
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

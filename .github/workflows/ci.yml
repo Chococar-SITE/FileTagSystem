@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Detect which components exist so the monorepo CI no-ops cleanly until
+  # each component is scaffolded (scanner/ server/ web/).
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      scanner: ${{ steps.check.outputs.scanner }}
+      server: ${{ steps.check.outputs.server }}
+      web: ${{ steps.check.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          set -euo pipefail
+          [ -f scanner/Cargo.toml ] && echo "scanner=true" >> "$GITHUB_OUTPUT" || echo "scanner=false" >> "$GITHUB_OUTPUT"
+          [ -f server/go.mod ]      && echo "server=true"  >> "$GITHUB_OUTPUT" || echo "server=false"  >> "$GITHUB_OUTPUT"
+          [ -f web/package.json ]   && echo "web=true"     >> "$GITHUB_OUTPUT" || echo "web=false"     >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+  scanner:
+    needs: detect
+    if: needs.detect.outputs.scanner == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scanner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: scanner
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo build --verbose
+      - run: cargo test --verbose
+
+  server:
+    needs: detect
+    if: needs.detect.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: server/go.sum
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-ed:"; echo "$unformatted"; exit 1
+          fi
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./... -race -coverprofile=coverage.out
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+  web:
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm run build --if-present
+      - run: npm test --if-present
+
+  # Single stable status check: green when all present components pass
+  # (absent components are skipped). Use this for branch protection.
+  ci:
+    needs: [detect, scanner, server, web]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify no component failed
+        run: |
+          results="${{ needs.detect.result }} ${{ needs.scanner.result }} ${{ needs.server.result }} ${{ needs.web.result }}"
+          echo "Job results: $results"
+          for r in $results; do
+            case "$r" in
+              failure|cancelled) echo "::error::A CI job ended with '$r'"; exit 1 ;;
+            esac
+          done
+          echo "CI passed (present components green; absent ones skipped)."
