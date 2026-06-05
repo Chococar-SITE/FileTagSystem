@@ -1,6 +1,5 @@
 version: 2
 updates:
-  # GitHub Actions used by the workflows above.
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -8,16 +7,23 @@ updates:
     commit-message:
       prefix: "ci"
 
-  # Enable each block as the corresponding component lands.
-  # - package-ecosystem: cargo
-  #   directory: /scanner
-  #   schedule:
-  #     interval: weekly
-  # - package-ecosystem: gomod
-  #   directory: /server
-  #   schedule:
-  #     interval: weekly
-  # - package-ecosystem: npm
-  #   directory: /web
-  #   schedule:
-  #     interval: weekly
+  - package-ecosystem: cargo
+    directory: /scanner
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "scanner"
+
+  - package-ecosystem: gomod
+    directory: /server
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "server"
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "web"

@@ -6,7 +6,7 @@
 ## 專案
 
 本地優先的**檔案標籤管理系統**:類 Alist 的瀏覽體驗 + 使用者自訂的多維度標籤搜尋;多人、細粒度權限、線上預覽。開源、可自部署。
-**現況:greenfield —— 設計已定稿,程式碼依里程碑陸續建置。**
+**現況:M1–M8 核心已實作且測試通過**(掃描器、DB/遷移、儲存/權限、標籤/繼承、搜尋、驗證/2FA、REST API、預覽、React 前端);M9 多 Provider(SMB/FTP/S3)為預留。
 
 ## 架構與技術棧 (§1.2, §2)
 
@@ -44,10 +44,12 @@
 
 ## 開發慣例
 
-- **Monorepo**,各元件獨立建置;CI 會自動偵測哪些元件已存在再跑(空目錄跳過):
-  - `scanner/` — `cargo fmt --check` / `clippy -D warnings` / `build` / `test`
-  - `server/` — `gofmt` / `go vet ./...` / `go build ./...` / `go test ./... -race` / `govulncheck`
-  - `web/` — `npm ci` / `npm run lint` / `build` / `test`
+- **Monorepo**,各元件獨立建置;CI 會自動偵測哪些元件已存在再跑:
+  - `scanner/` — `cargo fmt --check` / `clippy -D warnings` / `build` / `test`(binary 名 `filetag-scanner`)
+  - `server/` — `gofmt` / `go vet ./...` / `go build ./...` / `go test ./...` / `govulncheck`
+  - `web/` — `npm ci` / `npm run lint` / `npm run typecheck` / `build` / `npm test`
+- **Go 套件分層**(無循環依賴):`models` → `crypto`/`config` → `db` → `storage`/`perm`/`catalog`/`tags`/`search`/`auth`/`ingest` → `api` → `cmd/server`。新增功能照此分層,DB 存取走對應 store,HTTP 走 `api/handlers_*.go`。
+- 本地跑全端:`SCANNER_BIN=$(pwd)/scanner/target/release/filetag-scanner APP_MASTER_KEY=$(head -c32 /dev/urandom|base64) go -C server run ./cmd/server`,前端 `npm -C web run dev`(proxy `/api`→:8080)。
 - 機密一律環境變數,範本見 `.env.example`;**真實 `.env`、`*.db`、keyfile、`config.toml` 已被 `.gitignore` 擋下,勿提交**。
 - 提交前確認沒有把密鑰 / 憑證 / 個資 / 內部路徑寫進任何檔案(本 repo 公開)。
 

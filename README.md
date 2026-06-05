@@ -10,7 +10,7 @@ A local-first file manager with a **structured, user-defined tagging system** �
 
 **[繁體中文](#繁體中文) · [English](#english)**
 
-> ⚠️ **Status / 狀態:** Greenfield. The design (v0.5) is complete; code is being built out per milestone. / 設計(v0.5)已定稿,程式碼依里程碑陸續建置中。
+> **Status / 狀態:** Milestones **M1–M8 implemented and tested** (scanner, database/migrations, storage + permissions, tag system + inheritance, search, auth/2FA, REST API, preview, React UI). M9 (SMB/FTP/S3 providers) is reserved. / M1–M8 已實作並通過測試;M9 多 Provider 為預留。
 
 ---
 
@@ -77,20 +77,23 @@ docs/      完整設計規格(design-v0.5.md)
 
 ### 開始使用
 
-> 早期開發中,各元件落地後補上完整建置與執行說明。預期流程:
-
 ```bash
-# 掃描器(Rust)
-cd scanner && cargo build --release
+# 1. 掃描器(Rust)— 產生 filetag-scanner 執行檔
+cargo build --release --manifest-path scanner/Cargo.toml
 
-# API Server(Go)
-cd server && go build ./...
+# 2. API Server(Go)— 設定密鑰與掃描器路徑後啟動
+export APP_MASTER_KEY="$(head -c 32 /dev/urandom | base64)"   # 或固定值,妥善保管
+export SCANNER_BIN="$(pwd)/scanner/target/release/filetag-scanner"
+export ADMIN_PASSWORD="change-me"                              # 首次啟動建立 admin
+go -C server run ./cmd/server                                  # 監聽 :8080
 
-# 前端(React)
-cd web && npm ci && npm run build
+# 3. 前端(React)— 開發模式 proxy /api → :8080
+npm --prefix web ci && npm --prefix web run dev
 ```
 
-設定請複製 `.env.example` 為 `.env`(已被 git 忽略)並填入;**切勿提交真實密鑰**。
+首次啟動會建立 `admin` 帳號(密碼取自 `ADMIN_PASSWORD`,未設則隨機產生並印在日誌)——**請立即更改**。
+單一執行檔部署:`npm --prefix web run build` 後設 `WEB_DIST=web/dist`,Server 會一併提供前端。
+設定請複製 `.env.example` 為 `.env`(已被 git 忽略)並填入;**切勿提交真實密鑰**。生產環境請於 TLS 後方執行(cookie 會自動帶 `Secure`)。
 
 ### 安全
 
@@ -163,19 +166,25 @@ docs/      Full design spec (design-v0.5.md)
 
 ### Status / Roadmap
 
-Greenfield — milestones **M1 scanner → M2 database → M3 API + permission skeleton → M4 tags → M5 search → M6 auth/permissions → M7 frontend → M8 preview → M9 multi-provider**. Security and concurrency foundations (WAL, FK cascades, secrets, path-traversal, permission middleware) are deliberately front-loaded into M2–M3.
+**M1–M8 are implemented and tested**: M1 scanner → M2 database/migrations → M3 API + storage + permission engine → M4 tags + inheritance → M5 search → M6 auth/2FA/permissions → M7 React frontend → M8 preview. M9 (SMB/FTP/S3 providers) is reserved. Security and concurrency foundations (WAL, FK cascades, secrets, path-traversal, permission middleware) were front-loaded into M2–M3.
 
 ### Getting Started
 
-> Early development. Full build/run docs land with each component. Expected flow:
-
 ```bash
-cd scanner && cargo build --release   # Rust scanner
-cd server  && go build ./...          # Go API server
-cd web     && npm ci && npm run build # React frontend
+# 1. Scanner (Rust) → builds the filetag-scanner binary
+cargo build --release --manifest-path scanner/Cargo.toml
+
+# 2. API server (Go)
+export APP_MASTER_KEY="$(head -c 32 /dev/urandom | base64)"   # keep this safe
+export SCANNER_BIN="$(pwd)/scanner/target/release/filetag-scanner"
+export ADMIN_PASSWORD="change-me"                              # creates admin on first run
+go -C server run ./cmd/server                                  # listens on :8080
+
+# 3. Frontend (React) — dev server proxies /api → :8080
+npm --prefix web ci && npm --prefix web run dev
 ```
 
-Copy `.env.example` to `.env` (git-ignored) and fill it in. **Never commit real secrets.**
+First run creates an `admin` user (password from `ADMIN_PASSWORD`, or random + logged) — **change it immediately**. For a single-binary deploy, `npm --prefix web run build` then set `WEB_DIST=web/dist` so the server also serves the UI. Copy `.env.example` to `.env` (git-ignored) and fill it in; **never commit real secrets**, and run behind TLS in production (cookies then carry `Secure` automatically).
 
 ### Security
 
