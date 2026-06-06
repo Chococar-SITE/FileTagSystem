@@ -24,7 +24,13 @@ func (s *Service) Login(ctx context.Context, username, password, ip string) (Log
 		return LoginResult{}, ErrLocked
 	}
 	id, hash, active, err := s.credentials(ctx, username)
-	if err != nil || !active || !VerifyPassword(hash, password) {
+	// Always run bcrypt — even for a missing user — so the response time does not
+	// reveal whether the account exists (account enumeration, §7.4).
+	if err != nil {
+		hash = string(dummyHash)
+	}
+	passwordOK := VerifyPassword(hash, password)
+	if err != nil || !active || !passwordOK {
 		s.limiter.Fail(ukey)
 		s.limiter.Fail(ikey)
 		return LoginResult{}, ErrInvalidCredentials
