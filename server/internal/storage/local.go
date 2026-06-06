@@ -62,6 +62,23 @@ func (p *LocalProvider) resolve(rel string) (string, error) {
 		if !withinRoot(p.realRoot, realAbs) {
 			return "", ErrPathEscape
 		}
+	} else {
+		// abs doesn't fully exist, so EvalSymlinks couldn't resolve it. Resolve the
+		// deepest existing ancestor instead, so a symlinked parent directory can't
+		// smuggle a (yet non-existent) path outside the root.
+		for anc := filepath.Dir(abs); len(anc) >= len(p.root); {
+			if real, e := filepath.EvalSymlinks(anc); e == nil {
+				if !withinRoot(p.realRoot, real) {
+					return "", ErrPathEscape
+				}
+				break
+			}
+			parent := filepath.Dir(anc)
+			if parent == anc {
+				break
+			}
+			anc = parent
+		}
 	}
 	return abs, nil
 }
