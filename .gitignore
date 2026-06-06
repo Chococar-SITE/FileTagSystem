@@ -1,0 +1,81 @@
+# ─────────────────────────────────────────────────────────────
+# Secrets & credentials — NEVER commit (public repo)
+# ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.keyfile
+*master.key
+*master-key*
+keyfile
+secrets/
+*.secret
+
+# Local runtime config (machine-specific; contains local paths/credentials)
+config.toml
+*.local.toml
+config.local.*
+
+# ─────────────────────────────────────────────────────────────
+# Database & runtime data (may contain encrypted credentials / user data)
+# ─────────────────────────────────────────────────────────────
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*-wal
+*-shm
+/data/
+data/
+thumbnails/
+thumb-cache/
+
+# ─────────────────────────────────────────────────────────────
+# Rust (scanner/)
+# ─────────────────────────────────────────────────────────────
+target/
+**/*.rs.bk
+
+# ─────────────────────────────────────────────────────────────
+# Go (server/)
+# ─────────────────────────────────────────────────────────────
+/bin/
+/dist/
+*.test
+*.out
+coverage.out
+vendor/
+
+# ─────────────────────────────────────────────────────────────
+# Node / React (web/)
+# ─────────────────────────────────────────────────────────────
+node_modules/
+/web/build/
+/web/dist/
+.vite/
+.cache/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─────────────────────────────────────────────────────────────
+# Logs / temp
+# ─────────────────────────────────────────────────────────────
+*.log
+logs/
+tmp/
+*.tmp
+
+# ─────────────────────────────────────────────────────────────
+# OS / editor
+# ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
