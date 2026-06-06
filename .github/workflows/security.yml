@@ -56,38 +56,9 @@ jobs:
         with:
           fail-on-severity: high
 
-  # Static analysis. Runs per language only when that component exists.
-  codeql:
-    name: CodeQL (${{ matrix.language }})
-    runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [go, javascript-typescript]
-    steps:
-      - uses: actions/checkout@v6
-      - id: guard
-        run: |
-          set -euo pipefail
-          if [ "${{ matrix.language }}" = "go" ] && [ -f server/go.mod ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif [ "${{ matrix.language }}" = "javascript-typescript" ] && [ -f web/package.json ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Component for '${{ matrix.language }}' not present yet — skipping."
-          fi
-      - if: steps.guard.outputs.run == 'true'
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
-      - if: steps.guard.outputs.run == 'true'
-        uses: github/codeql-action/autobuild@v4
-      - if: steps.guard.outputs.run == 'true'
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:${{ matrix.language }}"
+  # NOTE: CodeQL static analysis is provided by GitHub's *default* code-scanning
+  # setup (Settings → Code security → Code scanning), which is enabled on this
+  # repo. An advanced CodeQL workflow is intentionally NOT defined here: running
+  # both setups conflicts and makes the default-setup "CodeQL" check fail. To use
+  # a custom CodeQL config instead, switch code scanning to "Advanced" in
+  # settings and re-add a codeql job here.
