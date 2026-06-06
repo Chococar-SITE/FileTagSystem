@@ -77,12 +77,12 @@ jobs:
             echo "Component for '${{ matrix.language }}' not present yet — skipping."
           fi
       - if: steps.guard.outputs.run == 'true'
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
       - if: steps.guard.outputs.run == 'true'
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
       - if: steps.guard.outputs.run == 'true'
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
