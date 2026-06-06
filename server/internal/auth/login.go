@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/chococar-site/filetagsystem/server/internal/models"
 )
@@ -66,18 +67,26 @@ func (s *Service) finishLogin(ctx context.Context, userID int64) (LoginResult, e
 }
 
 // CompleteTwoFA verifies the 2FA code for a pending login and issues tokens.
+// Attempts are throttled per user so the 6-digit code / backup codes can't be
+// brute-forced within the pending-token window (§7.4).
 func (s *Service) CompleteTwoFA(ctx context.Context, pendingToken, code string) (LoginResult, error) {
 	claims, err := s.jwt.VerifyPending(pendingToken)
 	if err != nil {
 		return LoginResult{}, ErrInvalidCredentials
+	}
+	key := "2fa:" + strconv.FormatInt(claims.UserID, 10)
+	if !s.limiter.Allowed(key) {
+		return LoginResult{}, ErrLocked
 	}
 	ok, err := s.VerifyTwoFA(ctx, claims.UserID, code)
 	if err != nil {
 		return LoginResult{}, err
 	}
 	if !ok {
+		s.limiter.Fail(key)
 		return LoginResult{}, ErrInvalidCredentials
 	}
+	s.limiter.Reset(key)
 	u, err := s.GetUser(ctx, claims.UserID)
 	if err != nil {
 		return LoginResult{}, err

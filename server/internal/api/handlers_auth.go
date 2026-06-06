@@ -1,27 +1,12 @@
 package api
 
 import (
-	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/chococar-site/filetagsystem/server/internal/audit"
 	"github.com/chococar-site/filetagsystem/server/internal/auth"
 )
-
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.IndexByte(xff, ','); i >= 0 {
-			return strings.TrimSpace(xff[:i])
-		}
-		return strings.TrimSpace(xff)
-	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
-	}
-	return r.RemoteAddr
-}
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -31,11 +16,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	res, err := s.auth.Login(r.Context(), req.Username, req.Password, clientIP(r))
+	res, err := s.auth.Login(r.Context(), req.Username, req.Password, s.clientIP(r))
 	if err != nil {
 		switch err {
 		case auth.ErrInvalidCredentials:
-			s.audit.Log(r.Context(), nil, audit.ActionLoginFail, "", nil, map[string]any{"username": req.Username, "ip": clientIP(r)})
+			s.audit.Log(r.Context(), nil, audit.ActionLoginFail, "", nil, map[string]any{"username": req.Username, "ip": s.clientIP(r)})
 			writeError(w, http.StatusUnauthorized, "invalid credentials")
 		case auth.ErrLocked:
 			writeError(w, http.StatusTooManyRequests, "too many attempts, try again later")
@@ -44,7 +29,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.audit.Log(r.Context(), ref(res.User.ID), audit.ActionLogin, "", nil, map[string]any{"ip": clientIP(r), "twofa": res.TwoFARequired})
+	s.audit.Log(r.Context(), ref(res.User.ID), audit.ActionLogin, "", nil, map[string]any{"ip": s.clientIP(r), "twofa": res.TwoFARequired})
 	if res.TwoFARequired {
 		setCookie(w, r, cookiePending, res.PendingToken, "/api/auth", 5*time.Minute)
 		writeJSON(w, http.StatusOK, map[string]any{"twofa_required": true})
@@ -68,6 +53,10 @@ func (s *Server) handle2FALogin(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.auth.CompleteTwoFA(r.Context(), c.Value, req.Code)
 	if err != nil {
+		if err == auth.ErrLocked {
+			writeError(w, http.StatusTooManyRequests, "too many attempts, try again later")
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "invalid code")
 		return
 	}

@@ -68,11 +68,14 @@ func (s *Server) handleUpdateFieldType(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 	if err := s.tags.UpdateFieldType(r.Context(), id, req.Name, req.AllowMulti); err != nil {
-		if errors.Is(err, tags.ErrNotFound) {
+		switch {
+		case errors.Is(err, tags.ErrNotFound):
 			writeError(w, http.StatusNotFound, "not found")
-			return
+		case errors.Is(err, tags.ErrMultiValueConflict):
+			writeError(w, http.StatusConflict, err.Error())
+		default:
+			serverError(w, err) // don't leak unexpected (e.g. DB) error text (§7.2)
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

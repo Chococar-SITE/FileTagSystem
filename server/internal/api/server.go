@@ -14,22 +14,24 @@ import (
 	"github.com/chococar-site/filetagsystem/server/internal/crypto"
 	"github.com/chococar-site/filetagsystem/server/internal/db"
 	"github.com/chococar-site/filetagsystem/server/internal/ingest"
+	"github.com/chococar-site/filetagsystem/server/internal/ratelimit"
 	"github.com/chococar-site/filetagsystem/server/internal/search"
 	"github.com/chococar-site/filetagsystem/server/internal/tags"
 )
 
 // Server holds the application services and the HTTP router.
 type Server struct {
-	cfg    *config.Config
-	db     *db.DB
-	cat    *catalog.Store
-	tags   *tags.Store
-	search *search.Store
-	auth   *auth.Service
-	ingest *ingest.Ingester
-	jobs   *ingest.JobManager
-	audit  *audit.Logger
-	mux    *http.ServeMux
+	cfg        *config.Config
+	db         *db.DB
+	cat        *catalog.Store
+	tags       *tags.Store
+	search     *search.Store
+	auth       *auth.Service
+	ingest     *ingest.Ingester
+	jobs       *ingest.JobManager
+	audit      *audit.Logger
+	apiLimiter *ratelimit.Limiter
+	mux        *http.ServeMux
 }
 
 // ref returns a pointer to v (handy for nullable audit ids).
@@ -38,16 +40,17 @@ func ref[T any](v T) *T { return &v }
 // NewServer constructs the server and registers routes.
 func NewServer(cfg *config.Config, d *db.DB, keys *crypto.KeyRing, jwtKey []byte) *Server {
 	s := &Server{
-		cfg:    cfg,
-		db:     d,
-		cat:    catalog.New(d),
-		tags:   tags.New(d),
-		search: search.New(d),
-		auth:   auth.NewService(d, keys, jwtKey, cfg.AccessTTL, cfg.RefreshTTL, cfg.LoginMaxFails, cfg.LoginLockout),
-		ingest: ingest.New(d),
-		jobs:   ingest.NewJobManager(),
-		audit:  audit.New(d),
-		mux:    http.NewServeMux(),
+		cfg:        cfg,
+		db:         d,
+		cat:        catalog.New(d),
+		tags:       tags.New(d),
+		search:     search.New(d),
+		auth:       auth.NewService(d, keys, jwtKey, cfg.AccessTTL, cfg.RefreshTTL, cfg.LoginMaxFails, cfg.LoginLockout),
+		ingest:     ingest.New(d),
+		jobs:       ingest.NewJobManager(),
+		audit:      audit.New(d),
+		apiLimiter: ratelimit.New(cfg.APIRatePerSec, cfg.APIRateBurst),
+		mux:        http.NewServeMux(),
 	}
 	s.registerOAuth()
 	s.routes()
@@ -84,7 +87,7 @@ func (s *Server) registerOAuth() {
 }
 
 // Handler returns the HTTP handler with global middleware applied.
-func (s *Server) Handler() http.Handler { return withGlobal(s.mux) }
+func (s *Server) Handler() http.Handler { return s.withGlobal(s.mux) }
 
 // Auth exposes the auth service (used by main for bootstrap).
 func (s *Server) Auth() *auth.Service { return s.auth }

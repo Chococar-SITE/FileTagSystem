@@ -21,6 +21,9 @@ var (
 	ErrCycle = errors.New("tags: cannot move a node into its own subtree")
 	// ErrFieldTypeMismatch is returned when moving across field types.
 	ErrFieldTypeMismatch = errors.New("tags: parent is in a different field type")
+	// ErrMultiValueConflict is returned when turning allow_multi off while a file
+	// still has multiple values of the field type.
+	ErrMultiValueConflict = errors.New("tags: files have multiple values for this field type")
 )
 
 // Store is the tag repository.
@@ -89,7 +92,7 @@ func (s *Store) UpdateFieldType(ctx context.Context, id int64, name string, allo
 			return err
 		}
 		if dupes > 0 {
-			return errors.New("tags: cannot set allow_multi=false while files have multiple values")
+			return ErrMultiValueConflict
 		}
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE field_types SET name=?, allow_multi=? WHERE id=?`, name, allowMulti, id)

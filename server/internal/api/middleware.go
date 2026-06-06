@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chococar-site/filetagsystem/server/internal/models"
@@ -45,13 +47,54 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=()")
+		// HSTS only over TLS, so it can't strand a plain-http dev setup.
+		if r.TLS != nil {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// withGlobal wraps the mux with the global middleware chain.
-func withGlobal(h http.Handler) http.Handler {
-	return recoverMW(securityHeaders(h))
+// rateLimitMW applies the general per-client API throttle (§7.4). Health checks
+// are exempt so monitoring isn't throttled.
+func (s *Server) rateLimitMW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !s.apiLimiter.Allow(s.clientIP(r)) {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// withGlobal wraps the mux with the global middleware chain: recover (outermost)
+// → security headers → rate limit → routing.
+func (s *Server) withGlobal(h http.Handler) http.Handler {
+	return recoverMW(securityHeaders(s.rateLimitMW(h)))
+}
+
+// clientIP returns the caller's IP. X-Forwarded-For is honored only when
+// TrustProxy is set (behind a known proxy); otherwise the unspoofable TCP peer
+// is used so per-IP limits and audit entries can't be forged.
+func (s *Server) clientIP(r *http.Request) string {
+	if s.cfg.TrustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if i := strings.IndexByte(xff, ','); i >= 0 {
+				return strings.TrimSpace(xff[:i])
+			}
+			return strings.TrimSpace(xff)
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // requireAuth validates the access-token cookie and loads the principal.
