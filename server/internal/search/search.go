@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/chococar-site/filetagsystem/server/internal/db"
 	"github.com/chococar-site/filetagsystem/server/internal/models"
@@ -144,11 +145,41 @@ func (s *Store) valueIDs(ctx context.Context, f Filter) ([]int64, error) {
 }
 
 // SearchValues finds field values whose value OR any alias matches the keyword
-// (§5.5). Uses LIKE for now; swap for FTS5/trigram as the vocabulary grows.
+// (§5.5). Queries of 3+ characters use the FTS5 trigram index; shorter queries
+// fall back to a LIKE scan (the trigram tokenizer needs >= 3 characters).
 func (s *Store) SearchValues(ctx context.Context, keyword string, fieldTypeID *int64, limit int) ([]models.FieldValue, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	if strings.TrimSpace(keyword) == "" {
+		return nil, nil
+	}
+	if utf8.RuneCountInString(keyword) >= 3 {
+		return s.searchValuesFTS(ctx, keyword, fieldTypeID, limit)
+	}
+	return s.searchValuesLike(ctx, keyword, fieldTypeID, limit)
+}
+
+// searchValuesFTS queries the FTS5 trigram index. The keyword is wrapped as a
+// quoted phrase so FTS5 operators in user input can't alter the query.
+func (s *Store) searchValuesFTS(ctx context.Context, keyword string, fieldTypeID *int64, limit int) ([]models.FieldValue, error) {
+	match := `"` + strings.ReplaceAll(keyword, `"`, `""`) + `"`
+	args := []any{match}
+	q := `SELECT DISTINCT fv.id, fv.field_type_id, fv.parent_id, fv.value, fv.path
+		FROM field_value_fts f
+		JOIN field_values fv ON fv.id = f.rowid
+		WHERE f.text MATCH ?`
+	if fieldTypeID != nil {
+		q += " AND fv.field_type_id = ?"
+		args = append(args, *fieldTypeID)
+	}
+	q += " ORDER BY fv.value LIMIT ?"
+	args = append(args, limit)
+	return s.scanValues(ctx, q, args...)
+}
+
+// searchValuesLike is the substring fallback for queries shorter than 3 chars.
+func (s *Store) searchValuesLike(ctx context.Context, keyword string, fieldTypeID *int64, limit int) ([]models.FieldValue, error) {
 	like := "%" + escapeLike(keyword) + "%"
 	args := []any{like, like}
 	q := `SELECT DISTINCT fv.id, fv.field_type_id, fv.parent_id, fv.value, fv.path
@@ -161,7 +192,10 @@ func (s *Store) SearchValues(ctx context.Context, keyword string, fieldTypeID *i
 	}
 	q += " ORDER BY fv.value LIMIT ?"
 	args = append(args, limit)
+	return s.scanValues(ctx, q, args...)
+}
 
+func (s *Store) scanValues(ctx context.Context, q string, args ...any) ([]models.FieldValue, error) {
 	rows, err := s.db.Read.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
