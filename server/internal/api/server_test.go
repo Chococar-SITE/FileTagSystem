@@ -47,6 +47,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 		AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour,
 		LoginMaxFails: 5, LoginLockout: time.Minute,
 		ScannerBin: "filetag-scanner", TextPreviewCap: 256 * 1024,
+		APIRatePerSec: 1000, APIRateBurst: 1000, // generous so tests aren't throttled
 	}
 	srv := api.NewServer(cfg, d, kr, []byte("0123456789abcdef0123456789abcdef"))
 	if _, err := srv.Bootstrap(context.Background(), "admin", adminPass); err != nil {
@@ -200,6 +201,40 @@ func TestEndToEndFlow(t *testing.T) {
 	}
 	if !bytes.Contains(body, []byte(`"login"`)) || !bytes.Contains(body, []byte(`"tag.apply"`)) {
 		t.Fatalf("audit log missing expected actions: %s", body)
+	}
+}
+
+func TestAPIRateLimit(t *testing.T) {
+	d, err := db.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+	key, _ := crypto.GenerateKey()
+	kr, _ := crypto.NewKeyRing(key)
+	cfg := &config.Config{
+		AccessTTL: time.Hour, RefreshTTL: time.Hour,
+		LoginMaxFails: 5, LoginLockout: time.Minute,
+		APIRatePerSec: 0.001, APIRateBurst: 2, // tiny burst, ~no refill during the test
+	}
+	srv := api.NewServer(cfg, d, kr, []byte("0123456789abcdef0123456789abcdef"))
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	c := newClient(t)
+
+	// First two requests pass the limiter (then 401 for being unauthenticated);
+	// the third from the same IP is throttled with 429.
+	var codes []int
+	for i := 0; i < 3; i++ {
+		code, _ := do(t, c, "GET", ts.URL+"/api/auth/me", nil)
+		codes = append(codes, code)
+	}
+	if codes[0] != http.StatusUnauthorized || codes[1] != http.StatusUnauthorized || codes[2] != http.StatusTooManyRequests {
+		t.Fatalf("codes = %v, want [401 401 429]", codes)
+	}
+	// Health is exempt from throttling so monitors aren't blocked.
+	if code, _ := do(t, c, "GET", ts.URL+"/api/health", nil); code != http.StatusOK {
+		t.Fatalf("health = %d, want 200 (exempt from rate limit)", code)
 	}
 }
 

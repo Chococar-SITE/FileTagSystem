@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/chococar-site/filetagsystem/server/internal/audit"
@@ -191,16 +192,15 @@ func (s *Server) fileForAction(w http.ResponseWriter, r *http.Request, p princip
 	return f, true
 }
 
+// parseID2 parses a non-negative int64 query value, rejecting non-digits and
+// out-of-range values (strconv.ParseInt errors on overflow).
 func parseID2(s string) (int64, bool) {
 	if s == "" {
 		return 0, false
 	}
-	var n int64
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, false
-		}
-		n = n*10 + int64(c-'0')
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || n < 0 {
+		return 0, false
 	}
 	return n, true
 }

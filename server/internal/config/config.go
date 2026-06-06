@@ -41,6 +41,16 @@ type Config struct {
 	LoginMaxFails  int
 	LoginLockout   time.Duration
 	TextPreviewCap int64 // max bytes streamed for text preview
+
+	// TrustProxy: when true, the client IP is taken from X-Forwarded-For (set
+	// this only behind a trusted reverse proxy). When false (default), the TCP
+	// peer address is used so clients cannot spoof their IP to evade per-IP
+	// rate limiting or forge audit entries.
+	TrustProxy bool
+
+	// General per-client API throttle (§7.4).
+	APIRatePerSec float64
+	APIRateBurst  float64
 }
 
 // Load reads configuration from the environment, applying sensible defaults.
@@ -59,6 +69,9 @@ func Load() *Config {
 		LoginMaxFails:  getint("LOGIN_MAX_FAILS", 5),
 		LoginLockout:   getdur("LOGIN_LOCKOUT", 15*time.Minute),
 		TextPreviewCap: int64(getint("TEXT_PREVIEW_CAP", 256*1024)),
+		TrustProxy:     getbool("TRUST_PROXY", false),
+		APIRatePerSec:  getfloat("API_RATE_PER_SEC", 20),
+		APIRateBurst:   getfloat("API_RATE_BURST", 40),
 		GitHub: OAuth{
 			ClientID:     os.Getenv("GITHUB_OAUTH_CLIENT_ID"),
 			ClientSecret: os.Getenv("GITHUB_OAUTH_CLIENT_SECRET"),
@@ -93,6 +106,24 @@ func getdur(k string, def time.Duration) time.Duration {
 	if v := os.Getenv(k); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
+		}
+	}
+	return def
+}
+
+func getbool(k string, def bool) bool {
+	if v := os.Getenv(k); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
+		}
+	}
+	return def
+}
+
+func getfloat(k string, def float64) float64 {
+	if v := os.Getenv(k); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
 		}
 	}
 	return def
