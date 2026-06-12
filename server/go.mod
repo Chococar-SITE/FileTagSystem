@@ -7,7 +7,7 @@ require (
 	github.com/pquerna/otp v1.5.0
 	golang.org/x/crypto v0.52.0
 	golang.org/x/image v0.41.0
-	modernc.org/sqlite v1.51.0
+	modernc.org/sqlite v1.52.0
 )
 
 require (
