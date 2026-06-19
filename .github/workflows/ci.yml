@@ -23,7 +23,7 @@ jobs:
       server: ${{ steps.check.outputs.server }}
       web: ${{ steps.check.outputs.web }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - id: check
         run: |
           set -euo pipefail
@@ -40,7 +40,7 @@ jobs:
       run:
         working-directory: scanner
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -60,7 +60,7 @@ jobs:
       run:
         working-directory: server
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: stable
@@ -87,7 +87,7 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
